@@ -1,0 +1,77 @@
+id: stdlib-excluded-runtime
+language: java
+files: [compiler/src/main/java/org/teavm/javac/StdlibConverter.java]
+metadata: { expect: 1 }
+rule:
+  kind: string_literal
+  regex: ^"org/teavm/classlib/"$
+fix: |-
+  "org/teavm/classlib/",
+  "org/teavm/runtime/"
+---
+id: stdlib-hidden-types-field
+language: java
+files: [compiler/src/main/java/org/teavm/javac/StdlibConverter.java]
+metadata: { expect: 1 }
+rule:
+  kind: field_declaration
+  pattern: $F
+  regex: RENAME_DESC
+fix: |-
+  private static final String[] HIDDEN_TYPES = {
+          "Lorg/teavm/runtime/",
+          "Lorg/teavm/interop/",
+          "Lorg/teavm/backend/",
+          "Lorg/teavm/classlib/",
+          "Lorg/teavm/platform",
+          "Lorg/teavm/jso/impl/",
+  };
+  $F
+---
+id: stdlib-hidden-field
+language: java
+files: [compiler/src/main/java/org/teavm/javac/StdlibConverter.java]
+metadata: { expect: 1 }
+rule:
+  pattern: desc = renameDesc(desc);
+  inside:
+    kind: method_declaration
+    stopBy: end
+    has: { field: name, regex: ^visitField$ }
+fix: |-
+  desc = renameDesc(desc);
+  if (refersToHiddenType(desc)) {
+      return null;
+  }
+---
+id: stdlib-hidden-method
+language: java
+files: [compiler/src/main/java/org/teavm/javac/StdlibConverter.java]
+metadata: { expect: 1 }
+rule: { pattern: "!emittedMethods.add(name + desc)" }
+fix: refersToHiddenType(desc) || !emittedMethods.add(name + desc)
+---
+id: stdlib-hidden-helper
+language: java
+files: [compiler/src/main/java/org/teavm/javac/StdlibConverter.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  pattern: $F
+  has: { field: name, regex: ^visitAnnotation$ }
+  inside:
+    kind: class_body
+    inside:
+      kind: class_declaration
+      has: { field: name, regex: ^StdlibConverter$ }
+fix: |-
+  private static boolean refersToHiddenType(String desc) {
+      for (var hidden : HIDDEN_TYPES) {
+          if (desc.contains(hidden)) {
+              return true;
+          }
+      }
+      return false;
+  }
+
+  $F

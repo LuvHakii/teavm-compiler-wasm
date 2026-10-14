@@ -1,0 +1,178 @@
+id: seekable-channel-position-throws
+language: java
+files: [org/teavm/classlib/java/nio/channels/TSeekableByteChannel.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  all:
+    - has: { field: name, regex: ^position$ }
+    - has: { field: parameters, regex: '^\(\)$' }
+fix: long position() throws IOException;
+---
+id: tfile-to-path
+language: java
+files: [org/teavm/classlib/java/io/TFile.java]
+metadata: { expect: 1 }
+rule:
+  kind: constructor_declaration
+  pattern: $F
+  has: { field: parameters, regex: '^\(String path\)$' }
+fix: |-
+  public org.teavm.classlib.java.nio.file.TPath toPath() {
+      return org.teavm.classlib.java.nio.file.TPaths.get(path);
+  }
+
+  $F
+---
+id: random-access-file-create
+language: java
+files: [org/teavm/classlib/java/io/TRandomAccessFile.java]
+metadata: { expect: 1 }
+rule: { pattern: "VirtualFile virtualFile = file.findVirtualFile();" }
+fix: |-
+  if (!readOnly && !file.exists()) {
+      try {
+          file.createNewFile();
+      } catch (IOException e) {
+          throw new FileNotFoundException(e.getMessage());
+      }
+  }
+  VirtualFile virtualFile = file.findVirtualFile();
+---
+id: random-access-file-close
+language: java
+files: [org/teavm/classlib/java/io/TRandomAccessFile.java]
+metadata: { expect: 1 }
+rule:
+  kind: block
+  pattern: "{ $$$B }"
+  inside:
+    kind: method_declaration
+    field: body
+    has: { field: name, regex: ^close$ }
+fix: |-
+  {
+      var open = accessor;
+      accessor = null;
+      if (open != null) open.close();
+  }
+---
+id: reader-transfer-to
+language: java
+files: [org/teavm/classlib/java/io/TReader.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  pattern: $F
+  has: { field: name, regex: ^skip$ }
+fix: |-
+  public long transferTo(TWriter out) throws IOException {
+      java.util.Objects.requireNonNull(out);
+      var buffer = new char[8192];
+      long transferred = 0;
+      int count;
+      while ((count = read(buffer, 0, buffer.length)) >= 0) {
+          out.write(buffer, 0, count);
+          transferred += count;
+      }
+      return transferred;
+  }
+
+  $F
+---
+id: print-stream-println-chars
+language: java
+files: [org/teavm/classlib/java/io/TPrintStream.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  pattern: $F
+  has: { field: name, regex: ^println$ }
+  all:
+    - has: { field: parameters, regex: '^\(char c\)$' }
+fix: |-
+  public void println(char[] value) {
+      sb.append(value).append('\n');
+      printSB();
+  }
+
+  $F
+---
+id: utf8-encoder-surrogate-rewind
+language: java
+files: [org/teavm/classlib/java/nio/charset/impl/TUTF8Encoder.java]
+metadata: { expect: 1 }
+rule:
+  kind: block
+  pattern: "{ $$$B }"
+  regex: hasMoreInput
+  inside:
+    kind: if_statement
+    field: consequence
+    has: { field: condition, regex: ^\(inPos >= inSize\)$ }
+fix: |-
+  {
+      --inPos;
+      $$$B
+  }
+---
+id: decimal-format-positive-suffix
+language: java
+files: [org/teavm/classlib/java/text/TDecimalFormatParser.java]
+metadata: { expect: 1 }
+rule: { pattern: "index = 0;" }
+fix: |-
+  index = 0;
+  positiveSuffix = new FormatField[0];
+---
+id: file-system-provider-input-stream
+language: java
+files: [org/teavm/classlib/java/nio/file/impl/TDefaultFileSystemProvider.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  has: { field: name, regex: ^newInputStream$ }
+fix: |-
+  @Override
+  public InputStream newInputStream(TPath path, TOpenOption... options) throws IOException {
+      java.util.Objects.requireNonNull(path);
+      for (var option : options) {
+          java.util.Objects.requireNonNull(option);
+          if (option != TStandardOpenOption.READ) {
+              throw new UnsupportedOperationException("Unsupported input option: " + option);
+          }
+      }
+      var fs = (org.teavm.runtime.fs.wasi.WasiFileSystem)
+              org.teavm.runtime.fs.VirtualFileSystemProvider.getInstance();
+      return new TFileInputStream(fs.openChannel(path.toString(), java.util.Set.of(TStandardOpenOption.READ)));
+  }
+---
+id: file-system-provider-output-stream
+language: java
+files: [org/teavm/classlib/java/nio/file/impl/TDefaultFileSystemProvider.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  has: { field: name, regex: ^newOutputStream$ }
+fix: |-
+  @Override
+  public OutputStream newOutputStream(TPath path, TOpenOption... options) throws IOException {
+      java.util.Objects.requireNonNull(path);
+      var modes = new java.util.HashSet<TOpenOption>();
+      if (options.length == 0) {
+          modes.add(TStandardOpenOption.CREATE);
+          modes.add(TStandardOpenOption.TRUNCATE_EXISTING);
+      } else {
+          for (var option : options) {
+              java.util.Objects.requireNonNull(option);
+              if (option == TStandardOpenOption.READ) {
+                  throw new UnsupportedOperationException("READ on output stream");
+              }
+              modes.add(option);
+          }
+      }
+      modes.add(TStandardOpenOption.WRITE);
+      var fs = (org.teavm.runtime.fs.wasi.WasiFileSystem)
+              org.teavm.runtime.fs.VirtualFileSystemProvider.getInstance();
+      return new TFileOutputStream(fs.openChannel(path.toString(), modes));
+  }

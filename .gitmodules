@@ -1,0 +1,4 @@
+[submodule "teavm-javac"]
+	path = teavm-javac
+	url = https://github.com/konsoletyper/teavm-javac.git
+	shallow = true

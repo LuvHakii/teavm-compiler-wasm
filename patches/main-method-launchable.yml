@@ -1,0 +1,8 @@
+id: main-method-public-static
+language: java
+files: [compiler/src/main/java/org/teavm/javac/MainMethodFinder.java]
+metadata: { expect: 1 }
+rule: { pattern: "name.equals(\"main\") && (desc.equals(\"([Ljava/lang/String;)V\") || desc.equals(\"()V\"))" }
+fix: |-
+  name.equals("main") && desc.equals("([Ljava/lang/String;)V")
+          && (access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC)) == (Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC)

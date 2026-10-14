@@ -1,0 +1,456 @@
+id: compiler-import-javac
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "import com.sun.tools.javac.util.Context;" }
+fix: |-
+  import com.sun.tools.javac.util.Context;
+  import com.sun.tools.javac.code.ClassFinder;
+  import com.sun.tools.javac.code.Symtab;
+  import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
+  import com.sun.tools.javac.util.Names;
+---
+id: compiler-import-plugins
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "import org.teavm.classlib.impl.JCLPlugin;" }
+fix: |-
+  import org.teavm.classlib.impl.JCLPlugin;
+  import org.teavm.classlib.java.lang.ObjectDependencyPlugin;
+  import org.teavm.classlib.java.lang.reflect.ArrayDependencyPlugin;
+---
+id: compiler-import-method-reference
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "import org.teavm.model.ClassHolderSource;" }
+fix: |-
+  import org.teavm.model.ClassHolderSource;
+  import org.teavm.model.MethodReference;
+---
+id: compiler-import-value-type
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "import org.teavm.model.ReferenceCache;" }
+fix: |-
+  import org.teavm.model.ReferenceCache;
+  import org.teavm.model.ValueType;
+---
+id: compiler-import-teavm
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "import org.teavm.platform.plugin.PlatformPlugin;" }
+fix: |-
+  import org.teavm.platform.plugin.PlatformPlugin;
+  import org.teavm.vm.TeaVM;
+---
+id: compiler-fields
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: field_declaration
+  regex: wasmOutputFiles
+fix: |-
+  private final Map<String, FileData> wasmOutputFiles = new LinkedHashMap<>();
+  private final Map<String, String> outputSources = new LinkedHashMap<>();
+  private final Map<String, MainClass[]> sourceMains = new LinkedHashMap<>();
+  private Context compilerContext;
+  private SemanticAnalysis analysis;
+---
+id: compiler-invalidate-inputs
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 5 }
+rule:
+  kind: block
+  pattern: "{ $$$B }"
+  inside:
+    kind: method_declaration
+    field: body
+    any:
+      - has: { field: name, regex: ^(addSourceFile|clearSourceFiles|addClassFile|clearInputClassFiles)$ }
+      - all:
+          - has: { field: name, regex: ^addJarFile$ }
+          - has: { field: parameters, regex: '^\(Int8Array content\)$' }
+fix: |-
+  {
+      invalidateInputs();
+      $$$B
+  }
+---
+id: compiler-invalidate-runtime
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 2 }
+rule:
+  kind: block
+  pattern: "{ $$$B }"
+  inside:
+    kind: method_declaration
+    field: body
+    has: { field: name, regex: ^(addOutputClassFile|addOutputJarFile)$ }
+fix: |-
+  {
+      invalidateRuntime();
+      $$$B
+  }
+---
+id: compiler-clear-output
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: block
+  pattern: "{ $$$B }"
+  inside:
+    kind: method_declaration
+    field: body
+    has: { field: name, regex: ^clearOutputFiles$ }
+fix: |-
+  {
+      invalidateRuntime();
+      outputSources.clear();
+      $$$B
+  }
+---
+id: compiler-clear-sdk
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: try_with_resources_statement
+  pattern: $T
+  inside:
+    kind: method_declaration
+    stopBy: end
+    has: { field: name, regex: ^setSdk$ }
+fix: |-
+  invalidateInputs();
+  sdkFiles.clear();
+  $T
+---
+id: compiler-clear-classlib
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: try_with_resources_statement
+  pattern: $T
+  inside:
+    kind: method_declaration
+    stopBy: end
+    has: { field: name, regex: ^setTeaVMClasslib$ }
+fix: |-
+  invalidateRuntime();
+  teavmClasslibFiles.clear();
+  $T
+---
+id: compiler-compile
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  has: { field: name, regex: ^compile$ }
+  pattern: $F
+fix: |-
+  @JSExport
+  public boolean compile() {
+      disposeAnalysis();
+      sourceMains.clear();
+      wasmOutputFiles.clear();
+      invalidateRuntime();
+      boolean success = false;
+      try {
+          initCompiler();
+          success = compiler.simpleCompile();
+          return success;
+      } finally {
+          closeCompiler();
+          if (!success) {
+              clearOutputFiles();
+              sourceMains.clear();
+          }
+      }
+  }
+
+  private void invalidateRuntime() {
+      classSource = null;
+      resourceProvider = null;
+      wasmOutputFiles.clear();
+  }
+
+  private void invalidateInputs() {
+      disposeAnalysis();
+      sourceMains.clear();
+      invalidateRuntime();
+  }
+
+  private void closeCompiler() {
+      JavaCompiler current = compiler;
+      if (current == null && compilerContext != null) {
+          current = compilerContext.get(JavaCompiler.compilerKey);
+      }
+      compiler = null;
+      compilerContext = null;
+      if (current != null) {
+          current.close();
+      }
+  }
+
+  @JSExport
+  public void disposeAnalysis() {
+      analysis = null;
+      closeCompiler();
+  }
+
+  @JSExport
+  public boolean analyze() {
+      disposeAnalysis();
+      sourceMains.clear();
+      try {
+          initCompiler();
+          boolean success = compiler.simpleAnalyze();
+          analysis = new SemanticAnalysis(compilerContext, compiler.units, sourceFiles, classFiles, sdkFiles);
+          analysis.captureMains(sourceMains);
+          return success;
+      } catch (RuntimeException | Error failure) {
+          disposeAnalysis();
+          throw failure;
+      }
+  }
+
+  private SemanticAnalysis requireAnalysis() {
+      if (analysis == null) {
+          throw new IllegalStateException("No analysis snapshot");
+      }
+      return analysis;
+  }
+
+  @JSExport
+  public EditorHover hover(String fileName, int offset) {
+      return requireAnalysis().hover(fileName, offset);
+  }
+
+  @JSExport
+  public EditorLocation definition(String fileName, int offset) {
+      return requireAnalysis().definition(fileName, offset);
+  }
+
+  @JSExport
+  public MainClass[] mainClassesIn(String fileName) {
+      if (!sourceFiles.containsKey(fileName)) {
+          throw new IllegalArgumentException("Unknown source: " + fileName);
+      }
+      var mains = sourceMains.get(fileName);
+      if (mains == null) {
+          throw new IllegalStateException("No source main metadata");
+      }
+      return mains.clone();
+  }
+
+  @JSExport
+  public String getOutputSourceFile(String name) {
+      return outputSources.get(name);
+  }
+
+  @JSExport
+  public MainClass mainClass(String binaryName) throws IOException {
+      var path = binaryName.replace('.', '/') + ".class";
+      var file = outputFiles.getOrDefault(path, classFiles.get(path));
+      if (file == null) {
+          return null;
+      }
+      var finder = new MainMethodFinder();
+      new ClassReader(file.data).accept(finder, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG);
+      if (!finder.hasMainMethod) {
+          return null;
+      }
+      var privateCompiler = new Compiler();
+      privateCompiler.sdkFiles.putAll(sdkFiles);
+      privateCompiler.classFiles.putAll(classFiles);
+      privateCompiler.outputFiles.putAll(outputFiles);
+      try {
+          privateCompiler.initCompiler();
+          privateCompiler.compiler.initModules(com.sun.tools.javac.util.List.nil());
+          var context = privateCompiler.compilerContext;
+          var symbol = ClassFinder.instance(context).loadClass(Symtab.instance(context).unnamedModule,
+                  Names.instance(context).fromString(binaryName));
+          var name = symbol.getQualifiedName().toString();
+          SemanticAnalysis.checkLaunchable(symbol);
+          if (name.isEmpty()) {
+              throw new IllegalArgumentException("Unnameable main class: " + binaryName);
+          }
+          return new MainClass(binaryName, name);
+      } finally {
+          privateCompiler.closeCompiler();
+      }
+  }
+
+  @JSExport
+  public EditorCompletion[] complete(String fileName, int offset) {
+      var canonical = requireAnalysis();
+      var prefix = canonical.prefix(fileName, offset);
+      var overlay = new Compiler();
+      overlay.sdkFiles.putAll(sdkFiles);
+      overlay.classFiles.putAll(classFiles);
+      overlay.sourceFiles.putAll(sourceFiles);
+      String original = canonical.text(fileName);
+      String placeholder = "\u0024EditorCompletion";
+      while (original.contains(placeholder)) {
+          placeholder += "$";
+      }
+      overlay.addSourceFile(fileName, original.substring(0, prefix[0]) + placeholder
+              + original.substring(prefix[1]));
+      try {
+          overlay.analyze();
+          return overlay.requireAnalysis().complete(fileName, prefix[0], placeholder, prefix[0], prefix[1],
+                  original.substring(prefix[0], offset));
+      } finally {
+          overlay.disposeAnalysis();
+      }
+  }
+---
+id: compiler-wasm-output-reset
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: local_variable_declaration
+  pattern: $S
+  regex: ^var outputName
+fix: |-
+  wasmOutputFiles.clear();
+  $S
+---
+id: compiler-plugin-order
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "new JSOPlugin().install(teavm);" }
+fix: ""
+---
+id: compiler-dependency-plugins-call
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "new JCLPlugin().install(teavm);" }
+fix: |-
+  new JCLPlugin().install(teavm);
+  new JSOPlugin().install(teavm);
+  addDependencyPlugins(teavm);
+---
+id: compiler-dependency-plugins
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  pattern: $F
+  has: { field: name, regex: ^onDiagnostic$ }
+fix: |-
+  private static void addDependencyPlugins(TeaVM teavm) {
+      var object = ValueType.object("java.lang.Object");
+      var arrayClass = "java.lang.reflect.Array";
+      var arrayPlugin = new ArrayDependencyPlugin();
+      teavm.add(new MethodReference("java.lang.Object", "clone", object), new ObjectDependencyPlugin());
+      teavm.add(new MethodReference(arrayClass, "getLength", object, ValueType.INTEGER), arrayPlugin);
+      teavm.add(new MethodReference(arrayClass, "newInstance", ValueType.object("java.lang.Class"),
+              ValueType.INTEGER, object), arrayPlugin);
+      teavm.add(new MethodReference(arrayClass, "get", object, ValueType.INTEGER, object), arrayPlugin);
+      teavm.add(new MethodReference(arrayClass, "set", object, ValueType.INTEGER, object, ValueType.VOID),
+              arrayPlugin);
+  }
+
+  $F
+---
+id: compiler-context
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "var context = new Context();" }
+fix: |-
+  var context = new Context();
+  compilerContext = context;
+---
+id: compiler-file-manager
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "new FileManagerImpl(sourceFiles, classFiles, sdkFiles, outputFiles)" }
+fix: new FileManagerImpl(sourceFiles, classFiles, sdkFiles, outputFiles, outputSources)
+---
+id: compiler-end-positions
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "compiler.prepare();" }
+fix: |-
+  compiler.genEndPos = true;
+  compiler.prepare();
+---
+id: compiler-units-field
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: constructor_declaration
+  pattern: $F
+  has: { field: name, regex: ^SimpleJavaCompiler$ }
+fix: |-
+  List<JCCompilationUnit> units;
+  $F
+---
+id: compiler-keep-comments
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: block
+  pattern: "{ $$$B }"
+  inside:
+    kind: method_declaration
+    field: body
+    has: { field: name, regex: ^prepare$ }
+fix: |-
+  {
+      keepComments = true;
+      $$$B
+  }
+---
+id: compiler-simple-analyze
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  pattern: $F
+  has: { field: name, regex: ^simpleCompile$ }
+fix: |-
+  boolean simpleAnalyze() {
+      shouldStopPolicyIfError = CompileState.FLOW;
+      shouldStopPolicyIfNoError = CompileState.FLOW;
+      var files = sourceFiles.values().stream().map(x -> (JavaFileObject) x).toList();
+      var parsed = parseFiles(files);
+      units = new ArrayList<>(parsed);
+      enterTrees(initModules(parsed));
+      flow(attribute(todo));
+      reportDeferredDiagnostics();
+      return log.nerrors == 0;
+  }
+
+  boolean simpleCompile() {
+      var files = sourceFiles.values().stream().map(x -> (JavaFileObject) x).toList();
+      var parsed = stopIfError(CompileState.ENTER, parseFiles(files));
+      units = new ArrayList<>(parsed);
+      enterTrees(stopIfError(CompileState.ENTER, initModules(parsed)));
+      var attributed = flow(attribute(todo));
+      new SemanticAnalysis(compilerContext, units, sourceFiles, classFiles, sdkFiles).captureMains(sourceMains);
+      generate(desugar(attributed));
+      reportDeferredDiagnostics();
+      return log.nerrors == 0;
+  }

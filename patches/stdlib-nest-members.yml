@@ -1,0 +1,46 @@
+id: stdlib-interfaces-self
+language: java
+files: [compiler/src/main/java/org/teavm/javac/StdlibConverter.java]
+metadata: { expect: 1 }
+rule: { pattern: "for (int i = 0; i < interfaces.length; ++i) { interfaces[i] = rename(interfaces[i]); }" }
+fix: |-
+  var self = name;
+  interfaces = java.util.Arrays.stream(interfaces)
+          .map(this::rename)
+          .filter(i -> !i.equals(self))
+          .toArray(String[]::new);
+---
+id: stdlib-nest-members
+language: java
+files: [compiler/src/main/java/org/teavm/javac/StdlibConverter.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  pattern: $F
+  has: { field: name, regex: ^visitField$ }
+fix: |-
+  @Override
+  public void visitOuterClass(String owner, String name, String descriptor) {
+      visible = false;
+      super.visitOuterClass(rename(owner), name, descriptor == null ? null : renameMethodDesc(descriptor));
+  }
+
+  @Override
+  public void visitInnerClass(String name, String outerName, String innerName, int access) {
+      if (outerName == null || innerName == null) {
+          return;
+      }
+      super.visitInnerClass(rename(name), rename(outerName), innerName, access);
+  }
+
+  @Override
+  public void visitNestHost(String nestHost) {
+      super.visitNestHost(rename(nestHost));
+  }
+
+  @Override
+  public void visitNestMember(String nestMember) {
+      super.visitNestMember(rename(nestMember));
+  }
+
+  $F

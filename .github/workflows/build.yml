@@ -1,0 +1,81 @@
+name: build
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish release <yyyymmdd-hhmm> UTC. Off = dry run, artifact only, 7 days."
+        type: boolean
+        default: false
+
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: pin
+        id: pin
+        run: |
+          SHA=$(git rev-parse HEAD:teavm-javac)
+          TAG=$(git ls-remote --tags https://github.com/konsoletyper/teavm-javac.git | grep "^$SHA" | cut -f2 | sed 's|refs/tags/||; s|\^{}$||' | tail -1 || true)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "rev=${TAG:-$SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: build
+        run: bash scripts/build.sh out
+
+      - name: smoke
+        run: node teavm-javac/compiler/src/test/js/semantic.mjs out
+
+      - name: stage release
+        env:
+          REV: ${{ steps.pin.outputs.rev }}
+          SHA: ${{ steps.pin.outputs.sha }}
+        run: |
+          mkdir -p release
+          cp out/* release/
+          PATCHES=$(basename -a patches/* | jq -R . | jq -s .)
+          jq --arg rev "$REV" --arg sha "$SHA" --argjson patches "$PATCHES" \
+            '. + {teavmJavacRev: $rev, teavmJavacBaseCommit: $sha, patches: $patches}' out/versions.json > release/versions.json
+          ls -la release/
+
+      - name: upload dry run
+        if: '!inputs.release'
+        uses: actions/upload-artifact@v7
+        with:
+          name: teavm-compiler-wasm-dryrun-${{ github.sha }}
+          path: release/
+          retention-days: 7
+
+      - name: release
+        if: inputs.release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REV: ${{ steps.pin.outputs.rev }}
+          SHA: ${{ steps.pin.outputs.sha }}
+        run: |
+          NOW=$(date -u +%s)
+          TAG=$(date -u -d "@$NOW" +%Y%m%d-%H%M)
+          NOTES=$(printf 'teavm-javac: %s (%s)\nPatch: WASI runtime, editor services, asset export\n%s\n' \
+            "$REV" "$SHA" "$(date -u -d "@$NOW" +%FT%TZ)")
+          gh release create "$TAG" release/* \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes "$NOTES" \
+          || gh release upload "$TAG" release/* --clobber

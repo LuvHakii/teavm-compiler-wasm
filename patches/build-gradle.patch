@@ -1,0 +1,219 @@
+diff --git a/compiler/build.gradle b/compiler/build.gradle
+index f359f95..01ffcda 100644
+--- a/compiler/build.gradle
++++ b/compiler/build.gradle
+@@ -14,6 +14,12 @@ configurations {
+     dist {
+         transitive = false
+     }
++    classlibSources {
++        transitive = false
++    }
++    coreSources {
++        transitive = false
++    }
+ }
+ 
+ dependencies {
+@@ -23,6 +29,8 @@ dependencies {
+     implementation libs.teavm.tooling
+     implementation libs.asm.core
+     classlibInput libs.teavm.classlib
++    classlibSources "org.teavm:teavm-classlib:${libs.versions.teavm.get()}:sources"
++    coreSources "org.teavm:teavm-core:${libs.versions.teavm.get()}:sources"
+     classlibInput libs.teavm.jso
+     classlibInput libs.teavm.jso.apis
+     classlibAuxInput libs.teavm.core
+@@ -40,6 +48,16 @@ dependencies {
+ sourceSets {
+     classlibEmu {
+     }
++    wasiRuntime {
++    }
++}
++
++apply from: "derive.gradle"
++
++dependencies {
++    wasiRuntimeCompileOnly libs.teavm.classlib
++    wasiRuntimeCompileOnly libs.teavm.core
++    wasiRuntimeCompileOnly libs.teavm.interop
+ }
+ 
+ compileJava {
+@@ -54,6 +72,7 @@ teavm {
+         outOfProcess = true
+         processMemory = 4096
+         modularRuntime = true
++        copyRuntime = true
+     }
+ }
+ 
+@@ -62,17 +81,18 @@ def classlibOutDir = project.layout.buildDirectory.dir("classlib")
+ tasks.register("generateClassLib", JavaExec) {
+     def output = classlibOutDir.map { it.file("compile-classlib-teavm.bin") }
+     dependsOn configurations.classlibInput
+-    dependsOn sourceSets.classlibEmu.output
++    dependsOn sourceSets.classlibEmu.output, sourceSets.wasiRuntime.output
+     inputs.files configurations.classlibInput
+     inputs.files {
+-        sourceSets.classlibEmu.output.classesDirs.collect { fileTree(it) }
++        [sourceSets.classlibEmu, sourceSets.wasiRuntime].collect { set -> set.output.classesDirs.collect { fileTree(it) } }
+     }
+     outputs.file output
+     args {
+         [
+             output.get().asFile.absolutePath,
+             *configurations.classlibInput.files.collect { it.absolutePath },
+-            *sourceSets.classlibEmu.output.classesDirs.files.collect { it.absolutePath }
++            *sourceSets.classlibEmu.output.classesDirs.files.collect { it.absolutePath },
++            *sourceSets.wasiRuntime.output.classesDirs.files.collect { it.absolutePath }
+         ].iterator()
+     }
+     classpath sourceSets.main.output, sourceSets.main.runtimeClasspath
+@@ -103,10 +123,25 @@ def repackCldr = tasks.register("repackCldr", Zip) {
+     include "supplemental/**"
+ }
+ 
+-def prepareTeaVMClassLib = tasks.register("prepareTeaVMClassLib", Copy) {
++def prepareTeaVMClassLib = tasks.register("prepareTeaVMClassLib", Sync) {
+     dependsOn unpackTeaVMClasslib, repackCldr
+     from(unpackTeaVMClasslib) {
+         exclude "org/teavm/classlib/impl/unicode/cldr-json.zip"
++        exclude "org/teavm/classlib/java/lang/TConsoleInputStream.class"
++        exclude 'org/teavm/classlib/java/lang/TSystem.class', 'org/teavm/classlib/java/lang/TSystem$*.class'
++        exclude 'org/teavm/classlib/java/lang/TRuntime.class', 'org/teavm/classlib/java/lang/TRuntime$*.class'
++        exclude 'org/teavm/classlib/java/util/TFormatter.class', 'org/teavm/classlib/java/util/TFormatter$*.class'
++        exclude 'org/teavm/classlib/java/io/TRandomAccessFile.class', 'org/teavm/classlib/java/io/TReader.class', 'org/teavm/classlib/java/io/TPrintStream.class'
++        exclude "org/teavm/classlib/java/io/TFile.class"
++        exclude "org/teavm/classlib/java/nio/channels/TSeekableByteChannel.class"
++        exclude 'org/teavm/classlib/java/nio/file/impl/TDefaultFileSystemProvider.class', 'org/teavm/classlib/java/nio/file/impl/TDefaultFileSystemProvider$*.class'
++        exclude "org/teavm/classlib/java/nio/charset/impl/TUTF8Encoder.class"
++        exclude "org/teavm/classlib/java/text/TDecimalFormatParser.class"
++        exclude 'org/teavm/classlib/impl/text/DoubleAnalyzer.class', 'org/teavm/classlib/impl/text/DoubleAnalyzer$*.class'
++        exclude 'org/teavm/classlib/java/lang/TDouble.class', 'org/teavm/classlib/java/lang/TDouble$*.class'
++        exclude "org/teavm/classlib/impl/console/Console.class"
++        exclude "org/teavm/classlib/impl/console/JSStdoutPrintStream.class"
++        exclude "org/teavm/classlib/impl/console/JSStderrPrintStream.class"
+     }
+     from(provider {
+         configurations.classlibAuxInput.collect {
+@@ -117,10 +152,14 @@ def prepareTeaVMClassLib = tasks.register("prepareTeaVMClassLib", Copy) {
+         include "org/teavm/platform/**"
+         include "org/teavm/jso/**"
+         include "org/teavm/runtime/**"
++        exclude "org/teavm/runtime/fs/VirtualFileSystemProvider.class"
++        exclude 'org/teavm/runtime/Fiber.class', 'org/teavm/runtime/Fiber$*.class'
+         include "org/teavm/interop/**"
+         include "org/teavm/backend/wasm/runtime/**"
+         include "org/teavm/backend/wasm/WasmRuntime*.class"
+         include "org/teavm/backend/wasm/WasmHeap*.class"
++        include "org/teavm/backend/wasm/transformation/ReferenceQueueTemplate.class"
++        include "org/teavm/backend/wasm/transformation/ReferenceQueueEntry.class"
+         include "com/jcraft/jzlib/**"
+     }
+     from(repackCldr) {
+@@ -131,6 +170,8 @@ def prepareTeaVMClassLib = tasks.register("prepareTeaVMClassLib", Copy) {
+             }
+         }
+     }
++    dependsOn sourceSets.wasiRuntime.output
++    from(sourceSets.wasiRuntime.output.classesDirs)
+     into project.layout.buildDirectory.dir("tmp/classlib-runtime")
+ }
+ 
+@@ -150,6 +191,77 @@ def buildTeaVMClassLib = tasks.register("buildTeaVMClassLib", JavaExec) {
+     mainClass = "org.teavm.javac.ArchiveBuilder"
+ }
+ 
++def generateVersions = tasks.register("generateVersions") {
++    def teavmVersion = libs.versions.teavm.get()
++    def javacVersion = "25"
++    def output = layout.buildDirectory.file("metadata/versions.json")
++    inputs.property "teavmVersion", teavmVersion
++    inputs.property "javacVersion", javacVersion
++    inputs.property "jdkRevision", providers.gradleProperty("jdk.revision")
++    outputs.file output
++    doLast {
++        def file = output.get().asFile
++        file.parentFile.mkdirs()
++        file.text = groovy.json.JsonOutput.toJson([java: "TeaVM ${teavmVersion} / javac ${javacVersion}"]) + "\n"
++    }
++}
++
++def wasmOpt = providers.gradleProperty("wasmOpt")
++def wasmGCDir = layout.buildDirectory.dir("generated/teavm/wasm-gc")
++def optimizedWasmDir = layout.buildDirectory.dir("optimized")
++
++def optimizeWasm = tasks.register("optimizeWasm", Exec) {
++    onlyIf { wasmOpt.isPresent() }
++    dependsOn generateWasmGC
++    def input = wasmGCDir.map { it.file("compiler.wasm") }
++    def output = optimizedWasmDir.map { it.file("compiler.wasm") }
++    inputs.file input
++    outputs.file output
++    doFirst {
++        output.get().asFile.parentFile.mkdirs()
++        commandLine wasmOpt.get(),
++                "--enable-gc", "--enable-reference-types", "--enable-exception-handling", "--enable-bulk-memory",
++                "--enable-multivalue", "--enable-sign-ext", "--enable-nontrapping-float-to-int",
++                "--enable-mutable-globals", "--strip-debug", input.get().asFile.absolutePath, "-o", output.get().asFile.absolutePath
++    }
++}
++
++def jdkSrcZip = providers.gradleProperty("jdkSrcZip").orElse(provider { "${System.getProperty('java.home')}/lib/src.zip" })
++
++def generateJavadocIndex = tasks.register("generateJavadocIndex", Exec) {
++    def tool = rootProject.layout.projectDirectory.file("tools/DocIndex.java")
++    def output = layout.buildDirectory.file("javadoc/javadoc.bin")
++    inputs.file tool
++    inputs.property "jdkSrcZip", jdkSrcZip
++    outputs.file output
++    doFirst {
++        def sources = file(jdkSrcZip.get())
++        if (!sources.exists()) {
++            throw new GradleException("JDK sources not found at ${sources}; pass -PjdkSrcZip=/path/to/src.zip " +
++                    "(the src.zip of the JDK that matches the SDK)")
++        }
++        commandLine "${System.getProperty('java.home')}/bin/java", "-Xmx3g", tool.asFile.absolutePath,
++                sources.absolutePath, output.get().asFile.absolutePath
++    }
++}
++
++tasks.register("exportAssets", Sync) {
++    dependsOn generateVersions, generateWasmGC, copyWasmGCRuntime, generateClassLib, buildTeaVMClassLib, optimizeWasm, generateJavadocIndex
++    from(generateJavadocIndex)
++    from(wasmGCDir) {
++        include "compiler.wasm-runtime.js"
++    }
++    from(wasmOpt.isPresent() ? optimizedWasmDir : wasmGCDir) {
++        include "compiler.wasm"
++    }
++    from(classlibOutDir) {
++        include "compile-classlib-teavm.bin", "runtime-classlib-teavm.bin"
++    }
++    from(generateVersions)
++    into providers.gradleProperty("assetsDir").map { file(it) }
++            .orElse(layout.buildDirectory.dir("assets").map { it.asFile })
++}
++
+ build {
+     dependsOn buildWasmGC, buildTeaVMClassLib, generateClassLib
+ }
+@@ -171,6 +283,16 @@ def testHarnessDir = project.layout.buildDirectory.dir("test-harness")
+ def prepareTestHarness = tasks.register("prepareTestHarness", Sync) {
+     dependsOn generateWasmGC
+     from("src/test/js")
++    from(providers.gradleProperty("shimRoot").map {
++        file("${it}/node_modules/@bjorn3/browser_wasi_shim/dist")
++    }) {
++        into "wasi-shim"
++    }
++    doFirst {
++        if (!providers.gradleProperty("shimRoot").isPresent()) {
++            throw new GradleException("prepareTestHarness requires -PshimRoot")
++        }
++    }
+     from(layout.buildDirectory.dir("generated/teavm/wasm-gc")) {
+         include "compiler.wasm*"
+         exclude "*.html"

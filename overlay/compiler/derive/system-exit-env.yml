@@ -1,0 +1,69 @@
+id: tsystem-exit-set-in
+language: java
+files: [org/teavm/classlib/java/lang/TSystem.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  pattern: $F
+  has: { field: name, regex: ^lineSeparator$ }
+fix: |-
+  public static void exit(int status) {
+      TRuntime.getRuntime().exit(status);
+  }
+
+  public static void setIn(TInputStream in) {
+      inCache = in;
+  }
+
+  $F
+---
+id: tsystem-getenv
+language: java
+files: [org/teavm/classlib/java/lang/TSystem.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  has: { field: name, regex: ^getenv$ }
+fix: |-
+  public static String getenv(String name) {
+      return org.teavm.runtime.WasiEnvironment.get().get(java.util.Objects.requireNonNull(name));
+  }
+
+  public static java.util.Map<String, String> getenv() {
+      return org.teavm.runtime.WasiEnvironment.get();
+  }
+---
+id: tsystem-user-dir
+language: java
+files: [org/teavm/classlib/java/lang/TSystem.java]
+metadata: { expect: 1 }
+rule: { pattern: 'defaults.put("user.home", getHomeDir());' }
+fix: |-
+  defaults.put("user.home", getHomeDir());
+  defaults.put("user.dir", VirtualFileSystemProvider.getInstance().getUserDir());
+---
+id: fiber-user-thread-count
+language: java
+files: [org/teavm/runtime/Fiber.java]
+metadata: { expect: 1 }
+rule:
+  kind: variable_declarator
+  has: { field: name, regex: ^userThreadCount$ }
+fix: userThreadCount
+---
+id: fiber-main-thread-count
+language: java
+files: [org/teavm/runtime/Fiber.java]
+metadata: { expect: 1 }
+rule:
+  kind: block
+  pattern: "{ $$$B }"
+  inside:
+    kind: method_declaration
+    field: body
+    has: { field: name, regex: ^startMain$ }
+fix: |-
+  {
+      ++userThreadCount;
+      $$$B
+  }

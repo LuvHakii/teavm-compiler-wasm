@@ -1,0 +1,57 @@
+id: filemanager-output-sources
+language: java
+files: [compiler/src/main/java/org/teavm/javac/FileManagerImpl.java]
+metadata: { expect: 1 }
+rule:
+  kind: constructor_declaration
+  pattern: $F
+fix: |-
+  private final Map<String, String> outputSources;
+
+  FileManagerImpl(Map<String, FileData> sourcePath, Map<String, FileData> classPath, Map<String, FileData> sdkPath,
+          Map<String, FileData> outputFiles, Map<String, String> outputSources) {
+      locations.put(StandardLocation.SOURCE_PATH, sourcePath);
+      locations.put(StandardLocation.CLASS_PATH, classPath);
+      locations.put(StandardLocation.CLASS_OUTPUT, outputFiles);
+      locations.put(StandardLocation.PLATFORM_CLASS_PATH, sdkPath);
+      this.outputSources = outputSources;
+  }
+---
+id: filemanager-list-output
+language: java
+files: [compiler/src/main/java/org/teavm/javac/FileManagerImpl.java]
+metadata: { expect: 1 }
+rule: { pattern: "var stream = map.values().stream();" }
+fix: |-
+  var files = new java.util.LinkedHashMap<String, FileData>();
+  if (location == StandardLocation.CLASS_PATH) {
+      files.putAll(locations.get(StandardLocation.CLASS_OUTPUT));
+  }
+  map.forEach(files::putIfAbsent);
+  var stream = files.values().stream().filter(file -> kinds.contains(file.getKind()));
+---
+id: filemanager-record-output-source
+language: java
+files: [compiler/src/main/java/org/teavm/javac/FileManagerImpl.java]
+metadata: { expect: 1 }
+rule: { pattern: "return getFileForOutput(location, \"\", className.replace('.', '/') + kind.extension, sibling);" }
+fix: |-
+  var path = className.replace('.', '/') + kind.extension;
+  if (location == StandardLocation.CLASS_OUTPUT && sibling != null) {
+      outputSources.put(path, sibling.getName());
+  }
+  return getFileForOutput(location, "", path, sibling);
+---
+id: filemanager-input-from-output
+language: java
+files: [compiler/src/main/java/org/teavm/javac/FileManagerImpl.java]
+metadata: { expect: 1 }
+rule: { pattern: "return map.get(path);" }
+fix: |-
+  if (location == StandardLocation.CLASS_PATH) {
+      var output = locations.get(StandardLocation.CLASS_OUTPUT).get(path);
+      if (output != null) {
+          return output;
+      }
+  }
+  return map.get(path);

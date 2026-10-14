@@ -1,0 +1,12 @@
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index cb2c1fc..759b622 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -3,6 +3,7 @@
+ teavm = "0.16.0"
+ asm = "9.8"
+ junit-jupiter = "5.11.4"
++checkstyle = "14.3.0"
+ 
+ [libraries]
+ 

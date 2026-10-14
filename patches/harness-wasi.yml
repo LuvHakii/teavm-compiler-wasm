@@ -1,0 +1,70 @@
+id: harness-import-wasi
+language: javascript
+files: [compiler/src/test/js/harness.js]
+metadata: { expect: 1 }
+rule: { pattern: 'import { load } from "./compiler/compiler.wasm-runtime.js";' }
+fix: |-
+  import { load } from "./compiler/compiler.wasm-runtime.js";
+  import { ConsoleStdout, File, OpenFile, PreopenDirectory, WASI } from "./wasi-shim/index.js";
+---
+id: harness-wasi-imports
+language: javascript
+files: [compiler/src/test/js/harness.js]
+metadata: { expect: 1 }
+rule:
+  kind: lexical_declaration
+  regex: ^const app = await load
+fix: |-
+  const stdout = [];
+  const stderr = [];
+  const wasi = new WASI([request.mainClass], ["PWD=/root"], [
+      new OpenFile(new File(new Uint8Array())),
+      new ConsoleStdout(bytes => stdout.push(...bytes)),
+      new ConsoleStdout(bytes => stderr.push(...bytes)),
+      new PreopenDirectory("/root", new Map()),
+      new PreopenDirectory("/tmp", new Map())
+  ]);
+  let exitCode = null;
+  const app = await load(compiler.getWebAssemblyOutputFile("app.wasm"), {
+      installImports(imports) {
+          wasi.inst = { exports: { memory: imports.env.memory } };
+          imports.wasi_snapshot_preview1 = {
+              ...wasi.wasiImport,
+              proc_exit(code) {
+                  exitCode = code;
+                  return wasi.wasiImport.proc_exit(code);
+              }
+          };
+      }
+  });
+---
+id: harness-wasi-run
+language: javascript
+files: [compiler/src/test/js/harness.js]
+metadata: { expect: 1 }
+rule:
+  kind: try_statement
+  regex: app\.exports\.main
+fix: |-
+  try {
+      app.exports.main([]);
+      const stopped = app.instance.exports.teavm_stopped;
+      while (stopped && !stopped()) {
+          await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      result.status = "OK";
+  } catch (e) {
+      if (exitCode === 0) {
+          result.status = "OK";
+      } else {
+          result.status = "EXCEPTION";
+          result.exception = exitCode === null ? (e instanceof Error ? e.message : String(e))
+                  : `Program exited with code ${exitCode}`;
+      }
+  }
+  if (exitCode !== null && exitCode !== 0) {
+      result.status = "EXCEPTION";
+      result.exception = `Program exited with code ${exitCode}`;
+  }
+  result.stdout = new TextDecoder().decode(new Uint8Array(stdout));
+  result.stderr = new TextDecoder().decode(new Uint8Array(stderr));

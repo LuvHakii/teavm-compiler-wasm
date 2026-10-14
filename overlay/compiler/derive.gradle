@@ -1,0 +1,32 @@
+def applyRules = providers.gradleProperty("applyRules")
+def derivedDir = layout.buildDirectory.dir("generated/derived")
+
+def ruleFiles = fileTree("derive") { include "*.yml" }
+def ruledPaths = {
+    ruleFiles.files.collectMany { it.readLines().findAll { it.startsWith("files:") } }
+            .collectMany { it.replaceAll(/files: \[|]/, "").split(",")*.trim() }.unique()
+}
+
+def extractClasslib = tasks.register("extractClasslib", Sync) {
+    inputs.files ruleFiles
+    from(zipTree(configurations.classlibSources.singleFile)) { include ruledPaths() }
+    from(zipTree(configurations.coreSources.singleFile)) { include ruledPaths() }
+    into derivedDir
+}
+
+def deriveClasslib = tasks.register("deriveClasslib", Exec) {
+    dependsOn extractClasslib
+    inputs.files ruleFiles
+    inputs.property "applyRules", applyRules
+    outputs.dir derivedDir
+    doFirst {
+        commandLine "bash", applyRules.get(), derivedDir.get().asFile, *ruleFiles.files.sort()
+    }
+}
+
+tasks.matching { it.name.startsWith("generateWasmGC") }.configureEach { dependsOn deriveClasslib }
+sourceSets.wasiRuntime.java.srcDir deriveClasslib.map { derivedDir }
+
+for (set in [sourceSets.classlibEmu, sourceSets.wasiRuntime]) {
+    set.java.srcDir "src/classlibShared/java"
+}

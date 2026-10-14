@@ -1,0 +1,22 @@
+id: double-analyzer-schubfach
+language: java
+files: [org/teavm/classlib/impl/text/DoubleAnalyzer.java]
+metadata: { expect: 1 }
+rule:
+  kind: block
+  pattern: "{ $$$B }"
+  inside:
+    kind: method_declaration
+    field: body
+    has: { field: name, regex: ^analyze$ }
+fix: |-
+  {
+      Schubfach.analyze(d, result);
+  }
+---
+id: double-min-normal-sign
+language: java
+files: [org/teavm/classlib/java/lang/TDouble.java]
+metadata: { expect: 1 }
+rule: { pattern: "-0x1.0P+1022" }
+fix: 0x1.0P-1022
