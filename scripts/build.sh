@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$REPO/teavm-javac"
-OUT="${1:-$REPO/out}"
+OUT="$(realpath -m "${1:-$REPO/out}")"
 BINARYEN_VER=133
 
 want="$(git -C "$REPO" rev-parse :teavm-javac) $(cat "$REPO"/patches/* "$REPO"/scripts/apply-rules.sh $(find "$REPO"/overlay -type f | sort) | git hash-object --stdin)"
