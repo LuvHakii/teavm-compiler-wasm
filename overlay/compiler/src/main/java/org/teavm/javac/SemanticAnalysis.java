@@ -278,7 +278,13 @@ final class SemanticAnalysis {
 
     private String detail(Element element, TypeMirror type) {
         String owner = element.getEnclosingElement() == null ? "" : element.getEnclosingElement().toString();
-        return (owner.isEmpty() ? "" : owner + ".") + element.getSimpleName() + ": " + type;
+        String name = (owner.isEmpty() ? "" : owner + ".") + element.getSimpleName();
+        if (type instanceof ExecutableType method) {
+            var parameters = method.getParameterTypes().stream().map(Object::toString)
+                    .collect(java.util.stream.Collectors.joining(", "));
+            return name + "(" + parameters + ") -> " + method.getReturnType();
+        }
+        return name + ": " + type;
     }
 
     private boolean accessible(Scope scope, Element element, DeclaredType receiver) {

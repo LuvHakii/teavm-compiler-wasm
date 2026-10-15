@@ -48,7 +48,7 @@ assert.equal(diagnostics.filter(d => d.severity === "error").length, 0);
 assert.deepEqual(Array.from(compiler.listOutputFiles()), []);
 assert.deepEqual(Array.from(compiler.listWebAssemblyOutputFiles()), []);
 const methodOffset = main.indexOf("util.add") + 6;
-assert.match(compiler.hover("Main.java", methodOffset).detail, /pkg\.Util\.add: \(int\)java\.lang\.String/);
+assert.match(compiler.hover("Main.java", methodOffset).detail, /pkg\.Util\.add\(int\) -> java\.lang\.String/);
 const declaration = compiler.definition("Main.java", methodOffset);
 assert.equal(declaration.fileName, "pkg/Util.java");
 assert.match(util.slice(declaration.from, declaration.to), /String add\(int value\)/);
