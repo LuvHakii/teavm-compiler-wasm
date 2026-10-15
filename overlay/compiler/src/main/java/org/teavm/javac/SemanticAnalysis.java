@@ -282,7 +282,7 @@ final class SemanticAnalysis {
         if (type instanceof ExecutableType method) {
             var parameters = method.getParameterTypes().stream().map(Object::toString)
                     .collect(java.util.stream.Collectors.joining(", "));
-            return name + "(" + parameters + ") -> " + method.getReturnType();
+            return name + "(" + parameters + "): " + method.getReturnType();
         }
         return name + ": " + type;
     }
