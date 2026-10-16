@@ -55,4 +55,12 @@ built from the JDK `src.zip` (`-PjdkSrcZip` selects another archive).
 - `patches/harness-wasi.yml` and the overlay tests add a WASI-based browser harness and `semantic.mjs`, a script that
   exercises the exported editor services against a built compiler. `overlay/tools/DocIndex.java` parses the JDK
   sources and writes `javadoc.bin` for the public `java.*`/`javax.*` API.
+- `patches/build-gradle.patch`, task `patchRuntime`: the generated `compiler.wasm-runtime.js` registers a
+  `FinalizationRegistry` held value `{ ref, queue }`, which is strong, so a `WeakHashMap` value that reaches its key
+  kept every javac `Context` alive. Both are now held through `WeakRef`s: heap after a forced GC stays at 35 MB over 60
+  `analyze()` runs, where it grew 2.5 MB per run. The task fails when an anchor stops matching exactly once.
+- `patches/build-gradle.patch`, `optimizeWasm`: `--strip-debug` only. Of about 45 single binaryen passes tried,
+  `inlining-optimizing` and `simplify-globals-optimizing` break the compiler (so do `-O1` and `-Os`). A combination of
+  the passes that work took the module from 4.67 to 4.23 MB with the same speed; it is not enabled, because CI has not
+  run against it.
 - A single rule file or patch does not build on its own.

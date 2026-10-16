@@ -1,5 +1,5 @@
 diff --git a/compiler/build.gradle b/compiler/build.gradle
-index f359f95..01ffcda 100644
+index f359f95..3c706fe 100644
 --- a/compiler/build.gradle
 +++ b/compiler/build.gradle
 @@ -14,6 +14,12 @@ configurations {
@@ -122,7 +122,7 @@ index f359f95..01ffcda 100644
      into project.layout.buildDirectory.dir("tmp/classlib-runtime")
  }
  
-@@ -150,6 +191,77 @@ def buildTeaVMClassLib = tasks.register("buildTeaVMClassLib", JavaExec) {
+@@ -150,6 +191,101 @@ def buildTeaVMClassLib = tasks.register("buildTeaVMClassLib", JavaExec) {
      mainClass = "org.teavm.javac.ArchiveBuilder"
  }
  
@@ -161,6 +161,30 @@ index f359f95..01ffcda 100644
 +    }
 +}
 +
++def patchedDir = layout.buildDirectory.dir("patched")
++
++def patchRuntime = tasks.register("patchRuntime") {
++    dependsOn generateWasmGC, copyWasmGCRuntime
++    def input = wasmGCDir.map { it.file("compiler.wasm-runtime.js") }
++    inputs.file input
++    outputs.dir patchedDir
++    doLast {
++        def js = input.get().asFile.text
++        [['if(typeof t!=="undefined"){t(e.queue,e.ref)}',
++          'if(typeof t!=="undefined"){const q=e.queue.deref(),f=e.ref.deref();if(q!==void 0&&f!==void 0){t(q,f)}}'],
++         ['r.register(e,{ref:t,queue:n})', 'r.register(e,{ref:new WeakRef(t),queue:new WeakRef(n)})']].each { from, to ->
++            def count = js.split(java.util.regex.Pattern.quote(from), -1).length - 1
++            if (count != 1) {
++                throw new GradleException("runtime patch anchor matched ${count} times (expected 1): ${from}")
++            }
++            js = js.replace(from, to)
++        }
++        def dir = patchedDir.get().asFile
++        dir.mkdirs()
++        new File(dir, "compiler.wasm-runtime.js").text = js
++    }
++}
++
 +def jdkSrcZip = providers.gradleProperty("jdkSrcZip").orElse(provider { "${System.getProperty('java.home')}/lib/src.zip" })
 +
 +def generateJavadocIndex = tasks.register("generateJavadocIndex", Exec) {
@@ -181,9 +205,9 @@ index f359f95..01ffcda 100644
 +}
 +
 +tasks.register("exportAssets", Sync) {
-+    dependsOn generateVersions, generateWasmGC, copyWasmGCRuntime, generateClassLib, buildTeaVMClassLib, optimizeWasm, generateJavadocIndex
++    dependsOn generateVersions, generateWasmGC, copyWasmGCRuntime, generateClassLib, buildTeaVMClassLib, optimizeWasm, generateJavadocIndex, patchRuntime
 +    from(generateJavadocIndex)
-+    from(wasmGCDir) {
++    from(patchedDir) {
 +        include "compiler.wasm-runtime.js"
 +    }
 +    from(wasmOpt.isPresent() ? optimizedWasmDir : wasmGCDir) {
@@ -200,7 +224,7 @@ index f359f95..01ffcda 100644
  build {
      dependsOn buildWasmGC, buildTeaVMClassLib, generateClassLib
  }
-@@ -171,6 +283,16 @@ def testHarnessDir = project.layout.buildDirectory.dir("test-harness")
+@@ -171,6 +307,16 @@ def testHarnessDir = project.layout.buildDirectory.dir("test-harness")
  def prepareTestHarness = tasks.register("prepareTestHarness", Sync) {
      dependsOn generateWasmGC
      from("src/test/js")
