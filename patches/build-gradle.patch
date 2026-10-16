@@ -1,5 +1,5 @@
 diff --git a/compiler/build.gradle b/compiler/build.gradle
-index f359f95..ba2cd58 100644
+index f359f95..a5af469 100644
 --- a/compiler/build.gradle
 +++ b/compiler/build.gradle
 @@ -14,6 +14,12 @@ configurations {
@@ -122,7 +122,7 @@ index f359f95..ba2cd58 100644
      into project.layout.buildDirectory.dir("tmp/classlib-runtime")
  }
  
-@@ -150,6 +191,122 @@ def buildTeaVMClassLib = tasks.register("buildTeaVMClassLib", JavaExec) {
+@@ -150,6 +191,146 @@ def buildTeaVMClassLib = tasks.register("buildTeaVMClassLib", JavaExec) {
      mainClass = "org.teavm.javac.ArchiveBuilder"
  }
  
@@ -205,6 +205,30 @@ index f359f95..ba2cd58 100644
 +    }
 +}
 +
++def packedClasslibDir = layout.buildDirectory.dir("tmp/classlib-packed")
++
++def stageClasslibPack = tasks.register("stageClasslibPack", Sync) {
++    dependsOn prepareTeaVMClassLib
++    from(layout.buildDirectory.dir("tmp/classlib-runtime"))
++    from(buildClassSnapshot)
++    into packedClasslibDir
++}
++
++def packClasslib = tasks.register("packClasslib", JavaExec) {
++    dependsOn stageClasslibPack, compileJava
++    classpath sourceSets.main.runtimeClasspath
++    def outputFile = layout.buildDirectory.file("packed/runtime-classlib-teavm.bin")
++    inputs.dir packedClasslibDir
++    outputs.file outputFile
++    args {
++        [
++                packedClasslibDir.get().asFile.absolutePath,
++                outputFile.get().asFile.absolutePath
++        ].iterator()
++    }
++    mainClass = "org.teavm.javac.ArchiveBuilder"
++}
++
 +def jdkSrcZip = providers.gradleProperty("jdkSrcZip").orElse(provider { "${System.getProperty('java.home')}/lib/src.zip" })
 +
 +def generateJavadocIndex = tasks.register("generateJavadocIndex", Exec) {
@@ -225,9 +249,9 @@ index f359f95..ba2cd58 100644
 +}
 +
 +tasks.register("exportAssets", Sync) {
-+    dependsOn generateVersions, generateWasmGC, copyWasmGCRuntime, generateClassLib, buildTeaVMClassLib, optimizeWasm, generateJavadocIndex, patchRuntime, buildClassSnapshot
++    dependsOn generateVersions, generateWasmGC, copyWasmGCRuntime, generateClassLib, buildTeaVMClassLib, optimizeWasm, generateJavadocIndex, patchRuntime, packClasslib
 +    from(generateJavadocIndex)
-+    from(buildClassSnapshot)
++    from(packClasslib)
 +    from(patchedDir) {
 +        include "compiler.wasm-runtime.js"
 +    }
@@ -235,7 +259,7 @@ index f359f95..ba2cd58 100644
 +        include "compiler.wasm"
 +    }
 +    from(classlibOutDir) {
-+        include "compile-classlib-teavm.bin", "runtime-classlib-teavm.bin"
++        include "compile-classlib-teavm.bin"
 +    }
 +    from(generateVersions)
 +    into providers.gradleProperty("assetsDir").map { file(it) }
@@ -245,7 +269,7 @@ index f359f95..ba2cd58 100644
  build {
      dependsOn buildWasmGC, buildTeaVMClassLib, generateClassLib
  }
-@@ -171,6 +328,16 @@ def testHarnessDir = project.layout.buildDirectory.dir("test-harness")
+@@ -171,6 +352,16 @@ def testHarnessDir = project.layout.buildDirectory.dir("test-harness")
  def prepareTestHarness = tasks.register("prepareTestHarness", Sync) {
      dependsOn generateWasmGC
      from("src/test/js")

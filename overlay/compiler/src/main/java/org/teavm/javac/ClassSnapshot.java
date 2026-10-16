@@ -37,6 +37,8 @@ import org.teavm.model.ReferenceCache;
 import org.teavm.model.util.ModelUtils;
 
 final class ClassSnapshot implements ClassHolderSource {
+    static final String ENTRY = "classlib-holders.bin";
+
     private final Table symbols = new Table();
     private final Table files = new Table();
     private final Table variables = new Table();

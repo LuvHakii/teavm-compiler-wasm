@@ -44,7 +44,7 @@ jobs:
         run: node teavm-javac/compiler/src/test/js/semantic.mjs out
 
       - name: snapshot
-        run: node teavm-javac/compiler/src/snapshot/snapshot.ts check out out teavm-javac/compiler/src/snapshot/corpus out/classlib-holders.bin
+        run: node teavm-javac/compiler/src/snapshot/snapshot.ts check out teavm-javac/compiler/build/classlib teavm-javac/compiler/src/snapshot/corpus out/runtime-classlib-teavm.bin
 
       - name: stage release
         env:

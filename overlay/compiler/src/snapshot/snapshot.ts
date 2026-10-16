@@ -16,11 +16,10 @@ const bytes = async (path: string) => new Int8Array(await readFile(path));
 const sdk = await bytes(join(classlibDir, "compile-classlib-teavm.bin"));
 const classlib = await bytes(join(classlibDir, "runtime-classlib-teavm.bin"));
 
-function createCompiler(snapshot?: Int8Array, record = false) {
+function createCompiler(classlibBytes: Int8Array, record = false) {
   const compiler = mod.exports.createCompiler();
   compiler.setSdk(sdk);
-  compiler.setTeaVMClasslib(classlib);
-  if (snapshot) compiler.setClassSnapshot(snapshot);
+  compiler.setTeaVMClasslib(classlibBytes);
   if (record) compiler.setRecordClassSnapshot(true);
   return compiler;
 }
@@ -135,14 +134,16 @@ const programs = (await readdir(corpusDir)).filter((name) => name.endsWith(".jav
 const sources = await Promise.all(programs.map((name) => readFile(join(corpusDir, name), "utf8")));
 
 if (command === "build") {
-  const compiler = createCompiler(undefined, true);
+  const compiler = createCompiler(classlib, true);
   sources.forEach((source) => compileProgram(compiler, source));
   const snapshot = compiler.exportClassSnapshot();
   await writeFile(file, new Uint8Array(snapshot.buffer, snapshot.byteOffset, snapshot.length));
   console.log(`snapshot: ${snapshot.length} bytes from ${programs.length} programs`);
 } else if (command === "check") {
-  const plain = createCompiler();
-  const snapshotted = createCompiler(await bytes(file));
+  const packed = await bytes(file);
+  if (packed.length <= classlib.length) throw new Error("the packed classlib carries no snapshot");
+  const plain = createCompiler(classlib);
+  const snapshotted = createCompiler(packed);
   let failed = 0;
   for (const [i, source] of sources.entries()) {
     const expected = await run(compileProgram(plain, source));
@@ -153,5 +154,5 @@ if (command === "build") {
   }
   if (failed) throw new Error(`${failed} programs behave differently with the snapshot`);
 } else {
-  throw new Error("usage: snapshot.ts build|check <wasm dir> <classlib dir> <corpus dir> <file>");
+  throw new Error("usage: snapshot.ts build <wasm dir> <classlib dir> <corpus dir> <snapshot out>\n       snapshot.ts check <wasm dir> <classlib dir> <corpus dir> <packed classlib>");
 }

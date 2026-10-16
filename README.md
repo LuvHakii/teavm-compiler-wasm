@@ -22,7 +22,7 @@ scripts/build.sh [output-dir]
 
 It applies the rules, the `.patch` files (it fails when a hunk applies at an offset) and the overlay to the
 submodule, then runs `:compiler:exportAssets`. The output directory (default `out/`) receives `compiler.wasm`,
-`compiler.wasm-runtime.js`, `compile-classlib-teavm.bin`, `runtime-classlib-teavm.bin`, `classlib-holders.bin`, `versions.json` and `javadoc.bin`. Set `WASM_OPT` to use
+`compiler.wasm-runtime.js`, `compile-classlib-teavm.bin`, `runtime-classlib-teavm.bin`, `versions.json` and `javadoc.bin`. Set `WASM_OPT` to use
 another `wasm-opt`; without one on `PATH` the script downloads binaryen 133. `SG` overrides the ast-grep command
 (default `npx -y -p @ast-grep/cli@0.45.3 ast-grep`). `GRADLE_ARGS` passes extra Gradle arguments. `javadoc.bin` is
 built from the JDK `src.zip` (`-PjdkSrcZip` selects another archive).
@@ -62,11 +62,14 @@ built from the JDK `src.zip` (`-PjdkSrcZip` selects another archive).
   archive builder and reader change together; a bin built before this does not load.
 - `patches/snapshot-class-source.yml` (with `overlay/.../ClassSnapshot.java`): upstream drops its parsed class source on
   every `compile()` and `addSourceFile()`, so each build parses the classlib bytecode again. The class source now
-  lives until the classlib or the class path changes, and `setClassSnapshot` loads `classlib-holders.bin`, the classlib
-  classes (with unoptimized programs, in TeaVM's `ClassIO` format) reached by `overlay/compiler/src/snapshot/corpus`.
-  Measured on Node: the first TeaVM step of Hello drops from 1.9 s to 0.8 s, Files from 6.3 s to 4.3 s; classes outside
-  the corpus are parsed as before. The file carries a checksum of the classlib and any other classlib ignores it.
-  `snapshot.ts check` (CI step `snapshot`) compiles the corpus with and without the snapshot, runs both on a stub WASI
+  lives until the classlib or the class path changes. `runtime-classlib-teavm.bin` carries one extra entry,
+  `classlib-holders.bin`: the classlib classes (with unoptimized programs, in TeaVM's `ClassIO` format) reached by
+  `overlay/compiler/src/snapshot/corpus`, built by compiling the corpus against the plain classlib and packed by
+  `packClasslib`. `setTeaVMClasslib` takes the entry out of the archive, so there is no second setter and no call
+  order. Measured on Node: the first TeaVM step of Hello drops from 1.9 s to 0.8 s, Files from 6.3 s to 4.3 s; classes
+  outside the corpus are parsed as before. The entry carries a checksum of the other classlib entries and any other
+  classlib ignores it. `snapshot.ts check` (CI step `snapshot`) compiles the corpus on the plain and the packed
+  classlib, runs both on a stub WASI
   host (no files, no stdin; `System.exit` unwinds from a fiber after `main` returns, so it is caught process-wide) and
   requires the same stdout, stderr and exit code. The modules are not byte-identical: class ids and `teavm_line`
   depend on the order classes are visited. Optimized programs must not be cached instead: TeaVM's program cache

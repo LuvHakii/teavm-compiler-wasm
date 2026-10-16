@@ -30,12 +30,6 @@ fix: |-
   }
 
   @JSExport
-  public void setClassSnapshot(Int8Array content) {
-      invalidateClassSource();
-      snapshotData = content.copyToJavaArray();
-  }
-
-  @JSExport
   public void setRecordClassSnapshot(boolean record) {
       invalidateClassSource();
       recordSnapshot = record;
@@ -62,6 +56,19 @@ rule:
 fix: |-
   invalidateClassSource();
   snapshotData = null;
+---
+id: snapshot-classlib-entry
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  pattern: addFile(teavmClasslibFiles, entry, input.readData());
+fix: |-
+  if (entry.equals(ClassSnapshot.ENTRY)) {
+      snapshotData = input.readData();
+  } else {
+      addFile(teavmClasslibFiles, entry, input.readData());
+  }
 ---
 id: snapshot-class-files
 language: java
