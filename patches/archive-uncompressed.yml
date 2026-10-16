@@ -1,0 +1,27 @@
+id: archive-writer-plain
+language: java
+files: [compiler/src/main/java/org/teavm/javac/ArchiveBuilder.java]
+metadata: { expect: 1 }
+rule: { pattern: "new DataOutputStream(new GZIPOutputStream($O))" }
+fix: new DataOutputStream($O)
+---
+id: archive-writer-import
+language: java
+files: [compiler/src/main/java/org/teavm/javac/ArchiveBuilder.java]
+metadata: { expect: 1 }
+rule: { pattern: "import java.util.zip.GZIPOutputStream;" }
+fix: ""
+---
+id: archive-reader-plain
+language: java
+files: [compiler/src/main/java/org/teavm/javac/ArchiveReader.java]
+metadata: { expect: 1 }
+rule: { pattern: "new DataInputStream(new GZIPInputStream($I))" }
+fix: new DataInputStream($I)
+---
+id: archive-reader-import
+language: java
+files: [compiler/src/main/java/org/teavm/javac/ArchiveReader.java]
+metadata: { expect: 1 }
+rule: { pattern: "import java.util.zip.GZIPInputStream;" }
+fix: ""

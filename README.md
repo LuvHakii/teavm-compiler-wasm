@@ -55,6 +55,11 @@ built from the JDK `src.zip` (`-PjdkSrcZip` selects another archive).
 - `patches/harness-wasi.yml` and the overlay tests add a WASI-based browser harness and `semantic.mjs`, a script that
   exercises the exported editor services against a built compiler. `overlay/tools/DocIndex.java` parses the JDK
   sources and writes `javadoc.bin` for the public `java.*`/`javax.*` API.
+- `patches/archive-uncompressed.yml`: upstream writes `compile-classlib-teavm.bin` and `runtime-classlib-teavm.bin` as one
+  gzip stream, which the release step then brotli-compresses again (no gain) and the compiler inflates in Wasm. The
+  archives are now plain, so only the transport compresses them: the runtime classlib goes from 2.31 MB to 1.65 MB with
+  brotli, the SDK from 208 KB to 149 KB, and `setSdk` plus `setTeaVMClasslib` take 60 ms instead of 136 ms (Node). The
+  archive builder and reader change together; a bin built before this does not load.
 - `patches/snapshot-class-source.yml` (with `overlay/.../ClassSnapshot.java`): upstream drops its parsed class source on
   every `compile()` and `addSourceFile()`, so each build parses the classlib bytecode again. The class source now
   lives until the classlib or the class path changes, and `setClassSnapshot` loads `classlib-holders.bin`, the classlib
