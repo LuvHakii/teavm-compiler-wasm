@@ -1,0 +1,42 @@
+id: optimization-property
+language: java
+files: [compiler/src/main/java/org/teavm/javac/WebAssemblyCompilationOptions.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  has: { field: name, regex: ^getObfuscated$ }
+fix: |-
+  @JSProperty
+  JSBoolean getObfuscated();
+
+  @JSProperty
+  JSString getOptimization();
+---
+id: optimization-level
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "teavm.setOptimizationLevel(TeaVMOptimizationLevel.ADVANCED);" }
+fix: |-
+  var optimization = options.getOptimization() == null || JSObjects.isUndefined(options.getOptimization())
+          ? TeaVMOptimizationLevel.ADVANCED
+          : TeaVMOptimizationLevel.valueOf(options.getOptimization().stringValue().toUpperCase());
+  teavm.setOptimizationLevel(optimization);
+---
+id: optimization-worker
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Worker.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  has: { field: name, regex: ^getObfuscated$ }
+fix: |-
+  @Override
+  public JSBoolean getObfuscated() {
+      return JSBoolean.valueOf(true);
+  }
+
+  @Override
+  public JSString getOptimization() {
+      return JSString.valueOf("advanced");
+  }

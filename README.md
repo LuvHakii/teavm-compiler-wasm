@@ -74,6 +74,12 @@ built from the JDK `src.zip` (`-PjdkSrcZip` selects another archive).
   requires the same stdout, stderr and exit code. The modules are not byte-identical: class ids and `teavm_line`
   depend on the order classes are visited. Optimized programs must not be cached instead: TeaVM's program cache
   reuses results that depend on the whole program, and a cached `AbstractStringBuilder` trapped with `illegal cast`.
+- `patches/optimization-option.yml`: upstream always compiles programs at TeaVM's `ADVANCED` level.
+  `generateWebAssembly({optimization})` now takes `simple`, `advanced` or `full` (default `advanced`; any other value
+  throws). Warm TeaVM step on Node, `simple` against `advanced`: Fmt 0.9 s against 1.7 s, Files 2.8 s against 4.0 s,
+  Scan3 1.9 s against 2.4 s, with modules 14 to 19% larger; `full` was twice as slow as `advanced` and larger. Whether
+  `simple` slows programs at run time is unmeasured. `snapshot.ts check` also builds every corpus program at `simple`
+  and requires the same output as `advanced`.
 - `patches/build-gradle.patch`, task `patchRuntime`: the generated `compiler.wasm-runtime.js` registers a
   `FinalizationRegistry` held value `{ ref, queue }`, which is strong, so a `WeakHashMap` value that reaches its key
   kept every javac `Context` alive. Both are now held through `WeakRef`s: heap after a forced GC stays at 35 MB over 60

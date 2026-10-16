@@ -39,7 +39,7 @@ function launcher(main: string) {
 `;
 }
 
-function compileProgram(compiler: any, source: string): Uint8Array {
+function compileProgram(compiler: any, source: string, optimization?: string): Uint8Array {
   compiler.clearSourceFiles();
   compiler.clearOutputFiles();
   compiler.addSourceFile("Main.java", source);
@@ -47,7 +47,7 @@ function compileProgram(compiler: any, source: string): Uint8Array {
   const [main] = compiler.detectMainClasses();
   compiler.addSourceFile("$Launcher.java", launcher(main));
   if (!compiler.compile()) throw new Error("javac failed on the launcher");
-  if (!compiler.generateWebAssembly({ outputName: "app", mainClass: "$Launcher", obfuscated: true })) {
+  if (!compiler.generateWebAssembly({ outputName: "app", mainClass: "$Launcher", obfuscated: true, optimization })) {
     throw new Error("TeaVM failed");
   }
   const wasm = compiler.getWebAssemblyOutputFile("app.wasm");
@@ -127,7 +127,12 @@ async function run(wasm: Uint8Array) {
     process.off("uncaughtException", ignoreExit);
   }
   const text = new TextDecoder();
-  return JSON.stringify({ out: text.decode(new Uint8Array(out)), err: text.decode(new Uint8Array(err)), code });
+  const trace = /\.java:\d+\)/g;
+  return JSON.stringify({
+    out: text.decode(new Uint8Array(out)),
+    err: text.decode(new Uint8Array(err)).replace(trace, ".java:N)"),
+    code,
+  });
 }
 
 const programs = (await readdir(corpusDir)).filter((name) => name.endsWith(".java")).sort();
@@ -145,14 +150,21 @@ if (command === "build") {
   const plain = createCompiler(classlib);
   const snapshotted = createCompiler(packed);
   let failed = 0;
+  let resized = 0;
   for (const [i, source] of sources.entries()) {
     const expected = await run(compileProgram(plain, source));
-    const actual = await run(compileProgram(snapshotted, source));
-    if (expected !== actual) failed++;
-    console.log(`${expected === actual ? "same" : "DIFFERENT"} ${programs[i]}`);
-    if (expected !== actual) console.log(`  plain:       ${expected.slice(0, 300)}\n  with snapshot: ${actual.slice(0, 300)}`);
+    const advanced = compileProgram(snapshotted, source);
+    const simple = compileProgram(snapshotted, source, "simple");
+    const actual = await run(advanced);
+    const quick = await run(simple);
+    if (advanced.length !== simple.length) resized++;
+    const same = expected === actual && expected === quick;
+    if (!same) failed++;
+    console.log(`${same ? "same" : "DIFFERENT"} ${programs[i]}`);
+    if (!same) console.log(`  plain:       ${expected.slice(0, 300)}\n  snapshot:    ${actual.slice(0, 300)}\n  simple:      ${quick.slice(0, 300)}`);
   }
-  if (failed) throw new Error(`${failed} programs behave differently with the snapshot`);
+  if (failed) throw new Error(`${failed} programs behave differently with the snapshot or the simple level`);
+  if (!resized) throw new Error("the optimization option changed no module");
 } else {
   throw new Error("usage: snapshot.ts build <wasm dir> <classlib dir> <corpus dir> <snapshot out>\n       snapshot.ts check <wasm dir> <classlib dir> <corpus dir> <packed classlib>");
 }
