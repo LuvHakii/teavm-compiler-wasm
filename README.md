@@ -77,9 +77,15 @@ built from the JDK `src.zip` (`-PjdkSrcZip` selects another archive).
 - `patches/optimization-option.yml`: upstream always compiles programs at TeaVM's `ADVANCED` level.
   `generateWebAssembly({optimization})` now takes `simple`, `advanced` or `full` (default `advanced`; any other value
   throws). Warm TeaVM step on Node, `simple` against `advanced`: Fmt 0.9 s against 1.7 s, Files 2.8 s against 4.0 s,
-  Scan3 1.9 s against 2.4 s, with modules 14 to 19% larger; `full` was twice as slow as `advanced` and larger. Whether
-  `simple` slows programs at run time is unmeasured. `snapshot.ts check` also builds every corpus program at `simple`
-  and requires the same output as `advanced`.
+  Scan3 1.9 s against 2.4 s, with modules 14 to 19% larger; `full` was twice as slow as `advanced` and larger. On a
+  CPU-bound program (recursion, sieve, `HashMap`, list sort, `StringBuilder`) the compiled code ran in 409 to 588 ms at
+  `simple`, 386 to 693 ms at `advanced` and 275 to 296 ms at `full`. `snapshot.ts check` also builds every corpus
+  program at `simple` and requires the same output as `advanced`.
+- `patches/obfuscation-option.yml`: upstream reads the `obfuscated` option of `generateWebAssembly` and then forces the
+  Wasm target to `setObfuscated(false)`, so every program carried its full name section whatever the host passed. The
+  option now applies (default `true`). Hello goes from 74.7 KB to 42.4 KB (brotli 25.0 to 18.2 KB) and Scan3 from
+  753 KB to 432 KB (199 to 139 KB); compile time, instantiate time, run time and the text of an uncaught-exception
+  stack trace are unchanged. Pass `obfuscated: false` to keep Java names in the Wasm name section.
 - `patches/build-gradle.patch`, task `patchRuntime`: the generated `compiler.wasm-runtime.js` registers a
   `FinalizationRegistry` held value `{ ref, queue }`, which is strong, so a `WeakHashMap` value that reaches its key
   kept every javac `Context` alive. Both are now held through `WeakRef`s: heap after a forced GC stays at 35 MB over 60

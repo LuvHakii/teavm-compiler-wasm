@@ -1,0 +1,6 @@
+id: obfuscation-option
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "target.setObfuscated(false);" }
+fix: target.setObfuscated(obfuscated);
