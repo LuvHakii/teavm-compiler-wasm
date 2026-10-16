@@ -1,5 +1,5 @@
 diff --git a/compiler/build.gradle b/compiler/build.gradle
-index f359f95..3c706fe 100644
+index f359f95..ba2cd58 100644
 --- a/compiler/build.gradle
 +++ b/compiler/build.gradle
 @@ -14,6 +14,12 @@ configurations {
@@ -122,7 +122,7 @@ index f359f95..3c706fe 100644
      into project.layout.buildDirectory.dir("tmp/classlib-runtime")
  }
  
-@@ -150,6 +191,101 @@ def buildTeaVMClassLib = tasks.register("buildTeaVMClassLib", JavaExec) {
+@@ -150,6 +191,122 @@ def buildTeaVMClassLib = tasks.register("buildTeaVMClassLib", JavaExec) {
      mainClass = "org.teavm.javac.ArchiveBuilder"
  }
  
@@ -167,6 +167,7 @@ index f359f95..3c706fe 100644
 +    dependsOn generateWasmGC, copyWasmGCRuntime
 +    def input = wasmGCDir.map { it.file("compiler.wasm-runtime.js") }
 +    inputs.file input
++    inputs.file wasmGCDir.map { it.file("compiler.wasm") }
 +    outputs.dir patchedDir
 +    doLast {
 +        def js = input.get().asFile.text
@@ -182,6 +183,25 @@ index f359f95..3c706fe 100644
 +        def dir = patchedDir.get().asFile
 +        dir.mkdirs()
 +        new File(dir, "compiler.wasm-runtime.js").text = js
++        java.nio.file.Files.copy(wasmGCDir.get().file("compiler.wasm").asFile.toPath(),
++                new File(dir, "compiler.wasm").toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
++    }
++}
++
++def buildClassSnapshot = tasks.register("buildClassSnapshot", Exec) {
++    dependsOn patchRuntime, buildTeaVMClassLib, generateClassLib
++    def script = layout.projectDirectory.file("src/snapshot/snapshot.ts")
++    def corpus = layout.projectDirectory.dir("src/snapshot/corpus")
++    def output = layout.buildDirectory.file("snapshot/classlib-holders.bin")
++    inputs.file script
++    inputs.dir corpus
++    inputs.dir patchedDir
++    inputs.dir classlibOutDir
++    outputs.file output
++    doFirst {
++        output.get().asFile.parentFile.mkdirs()
++        commandLine "node", script.asFile.absolutePath, "build", patchedDir.get().asFile.absolutePath,
++                classlibOutDir.get().asFile.absolutePath, corpus.asFile.absolutePath, output.get().asFile.absolutePath
 +    }
 +}
 +
@@ -205,8 +225,9 @@ index f359f95..3c706fe 100644
 +}
 +
 +tasks.register("exportAssets", Sync) {
-+    dependsOn generateVersions, generateWasmGC, copyWasmGCRuntime, generateClassLib, buildTeaVMClassLib, optimizeWasm, generateJavadocIndex, patchRuntime
++    dependsOn generateVersions, generateWasmGC, copyWasmGCRuntime, generateClassLib, buildTeaVMClassLib, optimizeWasm, generateJavadocIndex, patchRuntime, buildClassSnapshot
 +    from(generateJavadocIndex)
++    from(buildClassSnapshot)
 +    from(patchedDir) {
 +        include "compiler.wasm-runtime.js"
 +    }
@@ -224,7 +245,7 @@ index f359f95..3c706fe 100644
  build {
      dependsOn buildWasmGC, buildTeaVMClassLib, generateClassLib
  }
-@@ -171,6 +307,16 @@ def testHarnessDir = project.layout.buildDirectory.dir("test-harness")
+@@ -171,6 +328,16 @@ def testHarnessDir = project.layout.buildDirectory.dir("test-harness")
  def prepareTestHarness = tasks.register("prepareTestHarness", Sync) {
      dependsOn generateWasmGC
      from("src/test/js")

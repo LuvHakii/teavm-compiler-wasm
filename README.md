@@ -22,7 +22,7 @@ scripts/build.sh [output-dir]
 
 It applies the rules, the `.patch` files (it fails when a hunk applies at an offset) and the overlay to the
 submodule, then runs `:compiler:exportAssets`. The output directory (default `out/`) receives `compiler.wasm`,
-`compiler.wasm-runtime.js`, `compile-classlib-teavm.bin`, `runtime-classlib-teavm.bin`, `versions.json` and `javadoc.bin`. Set `WASM_OPT` to use
+`compiler.wasm-runtime.js`, `compile-classlib-teavm.bin`, `runtime-classlib-teavm.bin`, `classlib-holders.bin`, `versions.json` and `javadoc.bin`. Set `WASM_OPT` to use
 another `wasm-opt`; without one on `PATH` the script downloads binaryen 133. `SG` overrides the ast-grep command
 (default `npx -y -p @ast-grep/cli@0.45.3 ast-grep`). `GRADLE_ARGS` passes extra Gradle arguments. `javadoc.bin` is
 built from the JDK `src.zip` (`-PjdkSrcZip` selects another archive).
@@ -55,6 +55,17 @@ built from the JDK `src.zip` (`-PjdkSrcZip` selects another archive).
 - `patches/harness-wasi.yml` and the overlay tests add a WASI-based browser harness and `semantic.mjs`, a script that
   exercises the exported editor services against a built compiler. `overlay/tools/DocIndex.java` parses the JDK
   sources and writes `javadoc.bin` for the public `java.*`/`javax.*` API.
+- `patches/snapshot-class-source.yml` (with `overlay/.../ClassSnapshot.java`): upstream drops its parsed class source on
+  every `compile()` and `addSourceFile()`, so each build parses the classlib bytecode again. The class source now
+  lives until the classlib or the class path changes, and `setClassSnapshot` loads `classlib-holders.bin`, the classlib
+  classes (with unoptimized programs, in TeaVM's `ClassIO` format) reached by `overlay/compiler/src/snapshot/corpus`.
+  Measured on Node: the first TeaVM step of Hello drops from 1.9 s to 0.8 s, Files from 6.3 s to 4.3 s; classes outside
+  the corpus are parsed as before. The file carries a checksum of the classlib and any other classlib ignores it.
+  `snapshot.ts check` (CI step `snapshot`) compiles the corpus with and without the snapshot, runs both on a stub WASI
+  host (no files, no stdin; `System.exit` unwinds from a fiber after `main` returns, so it is caught process-wide) and
+  requires the same stdout, stderr and exit code. The modules are not byte-identical: class ids and `teavm_line`
+  depend on the order classes are visited. Optimized programs must not be cached instead: TeaVM's program cache
+  reuses results that depend on the whole program, and a cached `AbstractStringBuilder` trapped with `illegal cast`.
 - `patches/build-gradle.patch`, task `patchRuntime`: the generated `compiler.wasm-runtime.js` registers a
   `FinalizationRegistry` held value `{ ref, queue }`, which is strong, so a `WeakHashMap` value that reaches its key
   kept every javac `Context` alive. Both are now held through `WeakRef`s: heap after a forced GC stays at 35 MB over 60

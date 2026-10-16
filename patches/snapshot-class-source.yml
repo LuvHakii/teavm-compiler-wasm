@@ -1,0 +1,110 @@
+id: snapshot-fields
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: field_declaration
+  regex: ClassHolderSource classSource
+fix: |-
+  private ClassHolderSource classSource;
+  private ClassSnapshot classSnapshot;
+  private byte[] snapshotData;
+  private boolean recordSnapshot;
+---
+id: snapshot-invalidate
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: method_declaration
+  has: { field: name, regex: ^invalidateRuntime$ }
+fix: |-
+  private void invalidateRuntime() {
+      wasmOutputFiles.clear();
+  }
+
+  private void invalidateClassSource() {
+      classSource = null;
+      resourceProvider = null;
+      wasmOutputFiles.clear();
+  }
+
+  @JSExport
+  public void setClassSnapshot(Int8Array content) {
+      invalidateClassSource();
+      snapshotData = content.copyToJavaArray();
+  }
+
+  @JSExport
+  public void setRecordClassSnapshot(boolean record) {
+      invalidateClassSource();
+      recordSnapshot = record;
+  }
+
+  @JSExport
+  public Int8Array exportClassSnapshot() {
+      if (classSnapshot == null) {
+          throw new IllegalStateException("No classes compiled yet");
+      }
+      return Int8Array.copyFromJavaArray(classSnapshot.toBytes());
+  }
+---
+id: snapshot-classlib-setter
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  pattern: invalidateRuntime();
+  inside:
+    stopBy: end
+    kind: method_declaration
+    has: { field: name, regex: ^setTeaVMClasslib$ }
+fix: |-
+  invalidateClassSource();
+  snapshotData = null;
+---
+id: snapshot-class-files
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 3 }
+rule:
+  pattern: invalidateInputs();
+  inside:
+    stopBy: end
+    kind: method_declaration
+    any:
+      - has: { field: name, regex: ^(addClassFile|clearInputClassFiles)$ }
+      - all:
+          - has: { field: name, regex: ^addJarFile$ }
+          - has: { field: parameters, regex: '^\(Int8Array content\)$' }
+fix: |-
+  invalidateInputs();
+  invalidateClassSource();
+---
+id: snapshot-class-source
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule:
+  kind: if_statement
+  pattern: "if (classSource == null) { $$$B }"
+fix: |-
+  if (classSource == null) {
+      resourceProvider = new MemoryResourceProvider(List.of(teavmClasslibFiles, classFiles));
+      classSnapshot = new ClassSnapshot(refCache,
+              new ClasspathClassHolderSource(resourceProvider, refCache, substitute), recordSnapshot,
+              teavmClasslibFiles.values());
+      if (snapshotData != null) {
+          classSnapshot.load(snapshotData);
+      }
+      classSource = classSnapshot;
+  }
+---
+id: snapshot-output-source
+language: java
+files: [compiler/src/main/java/org/teavm/javac/Compiler.java]
+metadata: { expect: 1 }
+rule: { pattern: "new ClasspathClassHolderSource(currentResourceProvider, refCache, substitute)" }
+fix: |-
+  new ClasspathClassHolderSource(new MemoryResourceProvider(List.of(outputFiles)), refCache,
+          substitute)

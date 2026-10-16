@@ -43,6 +43,9 @@ jobs:
       - name: smoke
         run: node teavm-javac/compiler/src/test/js/semantic.mjs out
 
+      - name: snapshot
+        run: node teavm-javac/compiler/src/snapshot/snapshot.ts check out out teavm-javac/compiler/src/snapshot/corpus out/classlib-holders.bin
+
       - name: stage release
         env:
           REV: ${{ steps.pin.outputs.rev }}
