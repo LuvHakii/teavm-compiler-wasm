@@ -22,10 +22,10 @@ scripts/build.sh [output-dir]
 
 It applies the rules, the `.patch` files (it fails when a hunk applies at an offset) and the overlay to the
 submodule, then runs `:compiler:exportAssets`. The output directory (default `out/`) receives `compiler.wasm`,
-`compiler.wasm-runtime.js`, `compile-classlib-teavm.bin`, `runtime-classlib-teavm.bin`, `versions.json` and `javadoc.bin`. Set `WASM_OPT` to use
+`compiler.wasm-runtime.js`, `compile-classlib-teavm.bin`, `runtime-classlib-teavm.bin`, `versions.json`, `javadoc.bin` and `jdk-src.tar`. Set `WASM_OPT` to use
 another `wasm-opt`; without one on `PATH` the script downloads binaryen 133. `SG` overrides the ast-grep command
-(default `npx -y -p @ast-grep/cli@0.45.3 ast-grep`). `GRADLE_ARGS` passes extra Gradle arguments. `javadoc.bin` is
-built from the JDK `src.zip` (`-PjdkSrcZip` selects another archive).
+(default `npx -y -p @ast-grep/cli@0.45.3 ast-grep`). `GRADLE_ARGS` passes extra Gradle arguments. `javadoc.bin` and
+`jdk-src.tar` are built from one JDK `src.zip`, the one next to the `java` on `PATH` (`JDK_SRC_ZIP` selects another archive): `javadoc.bin` holds byte ranges into `jdk-src.tar`, so `build.sh` passes the archive to Gradle as `-PjdkSrcZip` after `GRADLE_ARGS`.
 
 ## Caveats
 
@@ -54,7 +54,8 @@ built from the JDK `src.zip` (`-PjdkSrcZip` selects another archive).
   adds the `checkstyle` version that upstream's `settings.gradle` reads but its catalog lacks.
 - `patches/harness-wasi.yml` and the overlay tests add a WASI-based browser harness and `semantic.mjs`, a script that
   exercises the exported editor services against a built compiler. `overlay/tools/DocIndex.java` parses the JDK
-  sources and writes `javadoc.bin` for the public `java.*`/`javax.*` API.
+  sources and writes `javadoc.bin` for the public `java.*`/`javax.*` API: `{files, keys, at}`, where `at` holds a file index, a start byte and an end byte per key, the range of the `/** */` comment inside `jdk-src.tar`. The text is not stored a second time: the index is 0.19 MB with brotli where the slimmed comment text was 1.33 MB. A reader takes the comment out of the tar, decodes `\uXXXX` escapes, removes the `/**`, the closing `*/` and the leading `*` of each line the way javac does, and keeps the lines up to the first tag other than `@param`, `@return`, `@throws`, `@exception` and `@deprecated`. All 18,962 entries rebuilt that way equal the text the previous `javadoc.bin` stored; one entry (`StringUTF16#putCharSB`) is dropped, because its previous text was a row of slashes from a non-`/** */` comment.
+- `scripts/jdk-src.sh`: `jdk-src.tar` holds the `java.base` `java/**` and `javax/**` sources that `DocIndex` reads (without `module-info.java` and `package-info.java`), path-relative to the module (`java/lang/String.java`), sorted, with zeroed owner and mtime so the tar is reproducible. 1,695 files, 29.8 MB raw and 3.21 MB with brotli.
 - `patches/archive-uncompressed.yml`: upstream writes `compile-classlib-teavm.bin` and `runtime-classlib-teavm.bin` as one
   gzip stream, which the release step then brotli-compresses again (no gain) and the compiler inflates in Wasm. The
   archives are now plain, so only the transport compresses them: the runtime classlib goes from 2.31 MB to 1.65 MB with

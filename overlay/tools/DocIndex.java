@@ -3,6 +3,7 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.DocSourcePositions;
 import com.sun.source.util.DocTrees;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.TreePathScanner;
@@ -59,14 +60,21 @@ public class DocIndex {
         StandardJavaFileManager fileManager = javac.getStandardFileManager(null, null, null);
         var task = (JavacTask) javac.getTask(null, fileManager, diagnostic -> {}, List.of("-proc:none"), null, sources);
         var trees = DocTrees.instance(task);
-        Map<String, String> docs = new TreeMap<>();
+        Map<String, int[]> docs = new TreeMap<>();
+        List<String> files = new ArrayList<>();
+        Map<String, Integer> fileIds = new HashMap<>();
         List<String> duplicates = new ArrayList<>();
+        List<String> unlocated = new ArrayList<>();
+        DocSourcePositions positions = trees.getSourcePositions();
         for (var unit : task.parse()) {
             String pack = unit.getPackageName() == null ? "" : unit.getPackageName().toString();
+            String text = unit.getSourceFile().getCharContent(true).toString();
+            String file = unit.getSourceFile().toUri().getPath().substring("/java.base/".length());
             new TreePathScanner<Void, Void>() {
                 private final Deque<String> owners = new ArrayDeque<>();
                 private final Deque<Map<String, String>> variables = new ArrayDeque<>();
                 private final Deque<Boolean> interfaces = new ArrayDeque<>();
+                private int[] prefix;
 
                 private String owner() {
                     var parts = new ArrayList<>(owners);
@@ -105,7 +113,21 @@ public class DocIndex {
                     if (doc != null && !doc.isBlank()) {
                         String slim = slim(doc);
                         if (!slim.isBlank() && !slim.strip().equals("{@inheritDoc}")) {
-                            if (docs.put(key, slim) != null) {
+                            var comment = trees.getDocCommentTree(getCurrentPath());
+                            int[] range = commentRange(text, (int) positions.getStartPosition(unit, comment, comment),
+                                    (int) positions.getEndPosition(unit, comment, comment));
+                            if (range == null) {
+                                unlocated.add(key);
+                                return;
+                            }
+                            if (prefix == null) {
+                                prefix = utf8Prefix(text);
+                            }
+                            int id = fileIds.computeIfAbsent(file, name -> {
+                                files.add(name);
+                                return files.size() - 1;
+                            });
+                            if (docs.put(key, new int[] {id, prefix[range[0]], prefix[range[1]]}) != null) {
                                 duplicates.add(key);
                             }
                         }
@@ -157,19 +179,28 @@ public class DocIndex {
                 }
             }.scan(unit, null);
         }
-        var json = new StringBuilder("{");
-        for (var entry : docs.entrySet()) {
-            if (json.length() > 1) {
-                json.append(',');
-            }
-            json.append('"').append(escape(entry.getKey())).append("\":\"").append(escape(entry.getValue()))
-                    .append('"');
+        var json = new StringBuilder("{\"files\":[");
+        for (int i = 0; i < files.size(); i++) {
+            json.append(i == 0 ? "" : ",").append('"').append(escape(files.get(i))).append('"');
         }
-        json.append('}');
+        json.append("],\"keys\":[");
+        boolean first = true;
+        for (String key : docs.keySet()) {
+            json.append(first ? "" : ",").append('"').append(escape(key)).append('"');
+            first = false;
+        }
+        json.append("],\"at\":[");
+        first = true;
+        for (int[] at : docs.values()) {
+            json.append(first ? "" : ",").append(at[0]).append(',').append(at[1]).append(',').append(at[2]);
+            first = false;
+        }
+        json.append("]}");
         Files.createDirectories(output.getParent());
         Files.writeString(output, json, StandardCharsets.UTF_8);
         System.out.println("javadoc entries: " + docs.size() + ", bytes: " + json.length() + ", colliding keys: "
-                + duplicates.size());
+                + duplicates.size() + ", without a located comment: " + unlocated.size());
+        unlocated.stream().limit(20).forEach(key -> System.out.println("  unlocated " + key));
         duplicates.stream().limit(20).forEach(key -> System.out.println("  collision " + key));
     }
 
@@ -206,6 +237,35 @@ public class DocIndex {
         }
         int dot = Math.max(base.lastIndexOf('.'), base.lastIndexOf('$'));
         return (dot >= 0 ? base.substring(dot + 1) : base) + dimensions;
+    }
+
+    static int[] commentRange(String text, int bodyStart, int bodyEnd) {
+        int start = text.lastIndexOf("/**", bodyStart);
+        int close = text.indexOf("*/", bodyEnd);
+        if (start < 0 || close < 0 || !delimiters(text, start + 3, bodyStart) || !delimiters(text, bodyEnd, close)) {
+            return null;
+        }
+        return new int[] {start, close + 2};
+    }
+
+    static boolean delimiters(String text, int from, int to) {
+        for (int i = from; i < to; i++) {
+            char c = text.charAt(i);
+            if (c != '*' && !Character.isWhitespace(c)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static int[] utf8Prefix(String text) {
+        int[] prefix = new int[text.length() + 1];
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            int bytes = c < 0x80 ? 1 : c < 0x800 ? 2 : Character.isHighSurrogate(c) ? 4 : Character.isLowSurrogate(c) ? 0 : 3;
+            prefix[i + 1] = prefix[i] + bytes;
+        }
+        return prefix;
     }
 
     static String slim(String doc) {

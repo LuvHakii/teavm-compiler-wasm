@@ -30,7 +30,11 @@ if [ -z "$WASM_OPT" ]; then
   WASM_OPT="$dir/bin/wasm-opt"
 fi
 
+JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+JDK_SRC_ZIP="${JDK_SRC_ZIP:-$(dirname "$(dirname "$(readlink -f "$(command -v "$JAVA")")")")/lib/src.zip}"
+
 cd "$SRC"
 # shellcheck disable=SC2086
 ./gradlew ${GRADLE_ARGS:-} :compiler:exportAssets -PassetsDir="$OUT" -PwasmOpt="$WASM_OPT" \
-  -PapplyRules="$REPO/scripts/apply-rules.sh"
+  -PapplyRules="$REPO/scripts/apply-rules.sh" -PjdkSrcZip="$JDK_SRC_ZIP"
+"$REPO/scripts/jdk-src.sh" "$JDK_SRC_ZIP" "$OUT/jdk-src.tar"
